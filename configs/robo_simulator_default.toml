@@ -9,4 +9,4 @@ max_wheel_speed = 2.0
 # These control the numerical integration used for simulation
 [robot_simulator.euler_integration]
 dt = 0.05
-max_steps = 100
+max_steps = 5000

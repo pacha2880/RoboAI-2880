@@ -26,9 +26,9 @@ from train import run_model_on_robot
 from utils import CHECKPOINTS_PATH, EVAL_FIGURES_PATH, seed_everything
 
 
-def load_model(checkpoint_path: str, model_type: str) -> nn.Module:
+def load_model(checkpoint_path: str, model_type: str, max_velocity) -> nn.Module:
     """Load trained model from checkpoint file."""
-    model = create_model(model_type=model_type)
+    model = create_model(model_type=model_type, max_velocity=max_velocity)
     model.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
     model.eval()
     return model
@@ -192,7 +192,7 @@ def main():
 
     # Load model and stats
     print("Loading model...")
-    model = load_model(args.checkpoint, model_type=model_type)
+    model = load_model(args.checkpoint, model_type=model_type, max_velocity=params.max_v)
     stats = load_normalization_stats("data/normalization_stats.npz")
 
     time_start = time.perf_counter()

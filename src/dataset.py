@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tomli
 
+from model import compute_relative_features
 from robot_simulator import (
     DifferentialDriveRobot,
     ExpertController,
@@ -329,9 +330,9 @@ def main():
     print_dataset_stats(dataset, "Full Dataset")
 
     # verify dataset graphs on robot_simulator.py using visualize_trajectory function
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig, axes = plt.subplots(6, 3, figsize=(15, 30))
     axes = axes.flatten()
-    idxs = random.sample(range(len(dataset["metadata"])), 6)
+    idxs = random.sample(range(len(dataset["metadata"])), 18)
     for idx, ax in enumerate(axes):
         i = idxs[idx]
         target = dataset["metadata"][i]["target"]

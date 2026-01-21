@@ -22,8 +22,9 @@ from dataset import (
     print_dataset_stats,
     save_dataset,
     split_dataset,
+    split_dataset_by_trajectory,
 )
-from model import count_parameters, create_model, normalize_inputs
+from model import compute_relative_features, count_parameters, create_model, normalize_inputs
 from robot_simulator import (
     DifferentialDriveRobot,
     ExpertController,
@@ -447,7 +448,7 @@ def main():
     dataset_time = time.perf_counter() - dataset_start_time
     print(f"Dataset generation completed in {dataset_time:.2f} seconds")
     print_dataset_stats(dataset, "Full Dataset")
-    train_dataset, val_dataset = split_dataset(dataset, val_fraction=val_fraction)
+    train_dataset, val_dataset = split_dataset_by_trajectory(dataset, val_fraction=val_fraction)
     save_dataset(train_dataset, str(DATA_PATH / "train_dataset.pkl"))
     save_dataset(val_dataset, str(DATA_PATH / "val_dataset.pkl"))
 
@@ -457,7 +458,7 @@ def main():
     print_dataset_stats(val_dataset, "Val Dataset")
 
     # Create model
-    model = create_model(model_type=model_type)
+    model = create_model(model_type=model_type, max_velocity=params.max_v)
 
     # Train
     history = train_model(

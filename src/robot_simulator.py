@@ -96,9 +96,13 @@ class DifferentialDriveRobot:
             theta_new = theta
         else:
             # Curved motion
-            x_new = x + v * np.cos(theta) * dt
-            y_new = y + v * np.sin(theta) * dt
-            theta_new = theta + omega * dt
+            r = v / omega
+            delta_angulo = omega * dt
+            x_new = x + r * (np.sin(theta + delta_angulo) - np.sin(theta)) 
+            y_new = y - r * (np.cos(theta + delta_angulo) - np.cos(theta))
+            # x_new = x + v * np.cos(theta) * dt
+            # y_new = y + v * np.sin(theta) * dt
+            theta_new = theta + delta_angulo
 
         self.state = np.array([x_new, y_new, theta_new])
         return self.state.copy()

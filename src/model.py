@@ -18,7 +18,7 @@ class NavigationNet(nn.Module):
     Output: [v_left, v_right] - 2 dimensional (wheel velocities)
     """
 
-    def __init__(self, input_dim: int = 5, hidden_dims: list = [64, 64], output_dim: int = 2):
+    def __init__(self, input_dim: int = 4, hidden_dims: list = [64, 64], output_dim: int = 2):
         """
         Initialize the navigation network.
 
@@ -149,7 +149,7 @@ class NavigationNetSimple(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x):
-        out = self.net(x)
+        out = self.net(compute_relative_features(x))
         return torch.tanh(out) * self.max_velocity
 
 
