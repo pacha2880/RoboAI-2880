@@ -1,0 +1,6 @@
+# Evaluation Configuration
+[eval]
+seed = 123
+model_type = "default"
+n_scenarios = 50
+scenario_difficulty = "medium"

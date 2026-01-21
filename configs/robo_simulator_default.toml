@@ -1,0 +1,12 @@
+# Robot Physical Parameters
+# These define the physical characteristics of the differential drive robot
+[robot_simulator.params]
+wheel_radius = 0.05
+wheel_base = 0.3
+max_wheel_speed = 2.0
+
+# Euler Integration Parameters
+# These control the numerical integration used for simulation
+[robot_simulator.euler_integration]
+dt = 0.05
+max_steps = 100
