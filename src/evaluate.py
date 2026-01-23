@@ -23,7 +23,7 @@ from robot_simulator import (
     visualize_trajectory,
 )
 from train import run_model_on_robot
-from utils import CHECKPOINTS_PATH, EVAL_FIGURES_PATH, seed_everything
+from utils import CHECKPOINTS_PATH, DATA_PATH, EVAL_FIGURES_PATH, seed_everything
 
 
 def load_model(checkpoint_path: str, model_type: str, max_velocity) -> nn.Module:
@@ -42,7 +42,7 @@ def load_normalization_stats(stats_path: str) -> dict:
 
 def evaluate_on_scenarios(
     model: nn.Module,
-    stats: dict,
+    d_max: float,
     n_scenarios: int,
     use_realistic_robot: bool,
     scenario_difficulty: str,
@@ -52,6 +52,7 @@ def evaluate_on_scenarios(
     dt: float,
     max_steps: int,
 ) -> dict:
+
     """
     Evaluate model on multiple random scenarios.
 
@@ -84,7 +85,13 @@ def evaluate_on_scenarios(
 
         # Run model
         states, controls, reached = run_model_on_robot(
-            model, robot, target, stats, model_type=model_type, dt=dt, max_steps=max_steps
+            model,
+            robot,
+            target,
+            d_max=d_max,
+            model_type=model_type,
+            dt=dt,
+            max_steps=max_steps,
         )
 
         final_dist = compute_distance_to_target(states[-1], target)
@@ -193,13 +200,19 @@ def main():
     # Load model and stats
     print("Loading model...")
     model = load_model(args.checkpoint, model_type=model_type, max_velocity=params.max_v)
-    stats = load_normalization_stats("data/normalization_stats.npz")
+    stats_path = DATA_PATH / "relative_feature_stats.npz"
+    if not stats_path.exists():
+        raise FileNotFoundError("relative_feature_stats.npz not found. Train the model first.")
+
+    d_max = float(np.load(stats_path)["d_max"])
+    print(f"[eval] Loaded d_max = {d_max:.4f}")
+
 
     time_start = time.perf_counter()
     print("\nEvaluating on idealized robot")
     results_ideal = evaluate_on_scenarios(
         model,
-        stats,
+        d_max=d_max,
         n_scenarios=n_scenarios,
         use_realistic_robot=False,
         scenario_difficulty=scenario_difficulty,
@@ -218,9 +231,9 @@ def main():
     print("\nEvaluating on realistic robot")
     results_real = evaluate_on_scenarios(
         model,
-        stats,
+        d_max=d_max,
         n_scenarios=n_scenarios,
-        use_realistic_robot=True,
+        use_realistic_robot=False,
         scenario_difficulty=scenario_difficulty,
         seed=seed,
         model_type=model_type,

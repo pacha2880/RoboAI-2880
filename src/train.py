@@ -98,6 +98,43 @@ def evaluate(
     return total_loss / n_batches
 
 
+import numpy as np
+
+def choose_d_max_from_inputs(inputs_5d: np.ndarray, percentile: float = 99.0) -> float:
+    """
+    inputs_5d: (N,5) [x,y,theta,x_t,y_t]
+    returns: d_max = percentile of euclidean distance
+    """
+    dx = inputs_5d[:, 3] - inputs_5d[:, 0]
+    dy = inputs_5d[:, 4] - inputs_5d[:, 1]
+    d = np.sqrt(dx * dx + dy * dy + 1e-8)
+    d_max = float(np.percentile(d, percentile))
+    return max(d_max, 1e-6)
+
+
+def compute_relative_features_np(inputs_5d: np.ndarray, d_max: float) -> np.ndarray:
+    """
+    inputs_5d: (N,5) [x,y,theta,x_t,y_t]
+    returns: (N,3) [d_norm, sin(alpha), cos(alpha)]
+    """
+    x = inputs_5d[:, 0]
+    y = inputs_5d[:, 1]
+    theta = inputs_5d[:, 2]
+    x_t = inputs_5d[:, 3]
+    y_t = inputs_5d[:, 4]
+
+    dx = x_t - x
+    dy = y_t - y
+
+    d = np.sqrt(dx * dx + dy * dy + 1e-8)
+    d_norm = np.clip(d / d_max, 0.0, 1.0)
+
+    angle_to_target = np.arctan2(dy, dx)
+    alpha = angle_to_target - theta
+
+    return np.stack([d_norm, np.sin(alpha), np.cos(alpha)], axis=1)
+
+
 def train_model(
     model: nn.Module,
     train_dataset: Dict,
@@ -130,24 +167,28 @@ def train_model(
     Returns:
         Training history dictionary
     """
-    # Normalize inputs
-    train_inputs_norm, stats = normalize_inputs(train_dataset["inputs"])
-    val_inputs_norm, _ = normalize_inputs(val_dataset["inputs"], stats)
+    # === Compute d_max from TRAIN only (avoid leakage) ===
+    d_max = choose_d_max_from_inputs(train_dataset["inputs"], percentile=99.0)
+    print(f"[train] d_max (p99) = {d_max:.4f}")
 
-    # Save normalization stats
-    np.savez(DATA_PATH / "normalization_stats.npz", mean=stats["mean"], std=stats["std"])
+    # (Opcional) guardar d_max para inferencia/rollouts
+    np.savez(str(DATA_PATH / "relative_feature_stats.npz"), d_max=d_max)
 
-    # Update datasets with normalized inputs
+    # === Transform inputs: 5D -> 3D relative features ===
+    train_inputs_rel = compute_relative_features_np(train_dataset["inputs"], d_max=d_max)
+    val_inputs_rel   = compute_relative_features_np(val_dataset["inputs"], d_max=d_max)
+
     train_dataset_norm = {
-        "inputs": train_inputs_norm,
+        "inputs": train_inputs_rel,
         "outputs": train_dataset["outputs"],
         "trajectory_ids": train_dataset["trajectory_ids"],
     }
     val_dataset_norm = {
-        "inputs": val_inputs_norm,
+        "inputs": val_inputs_rel,
         "outputs": val_dataset["outputs"],
         "trajectory_ids": val_dataset["trajectory_ids"],
     }
+
 
     # Create data loaders
     train_loader, val_loader = create_dataloaders(
@@ -260,19 +301,12 @@ def rollout_model_on_dataset(
         max_steps: Maximum simulation steps
         dt: Time step
     """
-    # Load the normalization stats used during training
-    # This is critical - the model expects normalized inputs!
-    stats_path = DATA_PATH / "normalization_stats.npz"
-    if stats_path.exists():
-        stats_data = np.load(stats_path)
-        stats = {"mean": stats_data["mean"], "std": stats_data["std"]}
-    else:
-        # Fallback to identity if stats don't exist (shouldn't happen)
-        print("Warning: normalization_stats.npz not found, using identity normalization")
-        stats = {
-            "mean": np.zeros(5),  # x, y, theta, x_target, y_target
-            "std": np.ones(5),
-        }
+    # Load d_max used during training (critical!)
+    stats_path = DATA_PATH / "relative_feature_stats.npz"
+    if not stats_path.exists():
+        raise FileNotFoundError("relative_feature_stats.npz not found. Train first to generate d_max.")
+    d_max = float(np.load(stats_path)["d_max"])
+
 
     outputs = []
     trajectory_ids = []
@@ -285,8 +319,10 @@ def rollout_model_on_dataset(
             start = metadata["start"]
             robot.reset_state(*start)
             states, controls, reached = run_model_on_robot(
-                model, robot, targets, stats, max_steps=max_steps, model_type=model_type, dt=dt
+                model, robot, targets, d_max=d_max, max_steps=max_steps, model_type=model_type, dt=dt
             )
+
+
             outputs.append(reached)
             trajectory_ids.append(metadata["trajectory_id"])
             if idx < len(axes):
@@ -311,11 +347,12 @@ def run_model_on_robot(
     model: nn.Module,
     robot: DifferentialDriveRobot,
     target: np.ndarray,
-    stats: dict,
+    d_max: float,
     max_steps: int,
     dt: float,
     model_type: str,
 ) -> Tuple[np.ndarray, np.ndarray, bool]:
+
     """
     Run trained model to control robot from current state to target.
 
@@ -344,15 +381,12 @@ def run_model_on_robot(
             if dist < THRESHOLD:
                 return np.array(states), np.array(controls), True
 
-            # Prepare input: [x, y, theta, x_target, y_target]
-            inp = np.concatenate([state, target])
+            inp5 = np.concatenate([state, target])[None, :]  # (1,5)
+            feat3 = compute_relative_features_np(inp5, d_max=d_max)  # (1,3)
 
-            # Normalize
-            inp_norm = (inp - stats["mean"]) / stats["std"]
-
-            # Forward pass
-            inp_tensor = torch.FloatTensor(inp_norm).unsqueeze(0).to("cpu")
+            inp_tensor = torch.FloatTensor(feat3).to("cpu")  # (1,3)
             output = model(inp_tensor)
+
 
             v_left, v_right = output[0].cpu().numpy()
 

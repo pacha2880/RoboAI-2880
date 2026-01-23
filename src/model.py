@@ -123,7 +123,7 @@ class NavigationNetSimple(nn.Module):
     all you need for point-to-point navigation.
     """
 
-    def __init__(self, max_velocity: float, input_dim: int = 4, output_dim: int = 2, hidden_dim: int = 32):
+    def __init__(self, max_velocity: float, input_dim: int = 3, output_dim: int = 2, hidden_dim: int = 64):
         super().__init__()
         self.max_velocity = max_velocity
         self.input_dim = input_dim
@@ -149,31 +149,39 @@ class NavigationNetSimple(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x):
-        out = self.net(compute_relative_features(x))
+        # x ya viene como [d_norm, sin(alpha), cos(alpha)]
+        out = self.net(x)
         return torch.tanh(out) * self.max_velocity
+
 
 
 def compute_relative_features(inputs: torch.Tensor) -> torch.Tensor:
     """
-    Convert raw state + target to relative input format.
-
-    Args:
-        x: Robot state [batch, 3] -> [x, y, theta]
-        target: Target position [batch, 2] -> [x_target, y_target]
+    Convert raw [x, y, theta, x_target, y_target] to relative features.
 
     Returns:
-        Input tensor [batch, 4] -> [dx, dy, sin(theta), cos(theta)]
+        [distance, sin(alpha), cos(alpha)]
+        where alpha = angle-to-target relative to robot heading.
     """
-    x = inputs[:, 0:1].clone()
-    y = inputs[:, 1:2].clone()
-    theta = inputs[:, 2:3].clone()
-    x_targets = inputs[:, 3:4].clone()
-    y_targets = inputs[:, 4:5].clone()
+    x = inputs[:, 0:1]
+    y = inputs[:, 1:2]
+    theta = inputs[:, 2:3]
+    x_t = inputs[:, 3:4]
+    y_t = inputs[:, 4:5]
 
-    sin_theta = torch.sin(theta)
-    cos_theta = torch.cos(theta)
+    dx = x_t - x
+    dy = y_t - y
 
-    return torch.cat([x - x_targets, y - y_targets, sin_theta, cos_theta], dim=1)
+    # Distance
+    distance = torch.sqrt(dx * dx + dy * dy + 1e-8)
+    distance = torch.clamp(distance / 5.0, 0.0, 1.0)
+
+    # Relative angle to target (wrap not strictly needed if using sin/cos)
+    angle_to_target = torch.atan2(dy, dx)
+    alpha = angle_to_target - theta
+
+    return torch.cat([distance, torch.sin(alpha), torch.cos(alpha)], dim=1)
+
 
 
 def create_model(model_type: str, **kwargs) -> nn.Module:
